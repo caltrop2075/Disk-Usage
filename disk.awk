@@ -2,117 +2,100 @@
 #------------------------------------------------------------------------------#
 #                            Programmed By Liz                                 #
 #------------------------------------------------------------------------------#
-# record structure
-# 1 name          /dev/sda5
-# 2 fssize        218.5G
-# 3 fsused        117.6G
-# 4 fsavail        89.7G
-# 5 mountpoint    /
+# 2023-04-22 rewrote simplifying
+# 2023-04-23 exponent zero glitch fixed
+# 2023-04-29 added read-only red
+# 2023-08-12 changed dot
 # ==============================================================================
 BEGIN {
-   f0=117                              # overall width, 117 optimum
-   f1=int(0.30*f0)                     # col 1; f0=117 -> 30% -> f1=35
-   f2=6                                # col 2-4
-   f3=f0-f1-3*f2-9                     # bar magnitude
+   RED="\033[0;1;31m"
+   MAG="\033[0;1;35m"
+   nrm="\033[0m"
 
-   c0="‧"                              # right chr |-|·|‧|
+   w1=35                                  # first column width <<< adjust this
+   w2=90-w1
+   w3=w1+w2+27
 
-   d1="";d2=""                         # dividers
-   for(i=0;i<f0;i++)
+   if(q==0)
    {
-      d1=d1"-"
-      d2=d2"="
+      for(i=0;i<w3;i++)                      # dividers
+      {
+         d1=d1"-"
+         d2=d2"="
+      }
+                                             # heading
+      printf("%s\n%s   "RED"%s"nrm" %s\n%s\n",d2,"Disk Usage","read-only","flash drive failure",d1)
    }
-
-   env=ENVIRON["MEDIA"]"/"               # get $MEDIA envrionment variable
-   printf("%s\n%s\n%s\n",d2,"Disk Usage",d1)
-   printf("%-"f1"s %"f2"s %"f2"s %"f2"s %s\n","DRIVE","SIZE","USED","AVAIL","%USE")
-}
+   printf("%-"w1"s%7s%7s%7s%5s\n","DRIVE","SIZE","USED","AVAIL","%USE")
+ }
 # ==============================================================================
 {
-   if(NF==5 && !match($5,/\/boot\//))   # output filtering
-   {                                   # format drive name
-      sub(env,"")                        # remove $MEDIA from drive names
-      s=substr($5,1,f1)                # max len name, DVD can be long
-      s=s fx_dot(length(s),f1)         # name right
-      p=fx_p($2,$3)                    # percent
-      a=int(f3*p+0.5)                  # bar
-      b=""                             # build bar graph
-      for(i=0;i<a;i++)                 # bar left
-          b=b"|"
-      b=b fx_dot(a,f3)                 # bar right
-      printf("%s %"f2"s %"f2"s %"f2"s %3.f%% %s\n",s,$2,$3,$4,int(p*100+0.5),b)
+   if(NF>1)
+   {
+      sub(/\/.*\//,"",$5)                 # remove leading directory
+      switch($5)
+      {
+         case "efi" :                     # don't print items
+            break
+         default :
+            o=""                          # check ro/rw status
+            cmd="findmnt -no vfs-options \"/dev/"$1"\" | lsdrv.awk -v q=0"
+            cmd | getline o
+            close(cmd)
+            printf("%s",o)
+            p=$3/$2                       # percentage fraction
+            printf("%s",$5)               # first column
+            l=length($5)
+            for(i=l;i<w1;i++)
+               printf("·")
+            for(i=2;i<=4;i++)             # sizes in powers of 3
+               fx_exp($i)
+            printf(" %3d%% ",int(p*100))  # percentage
+            a=int(p*w2)                   # bargraph
+            b=w2-a
+            for(i=0;i<a;i++)
+               printf("|")
+            for(i=0;i<b;i++)
+               printf("·")
+            printf(nrm"\n")                   # finish line
+      }
    }
 }
 # ==============================================================================
 END {
-   printf("%s\n",d2)
+   if(q==0)
+      printf("%s\n",d2)
 }
 # ==============================================================================
 # functions
 # ------------------------------------------------------------------------------
-# dot
-function fx_dot(x,y)
+function fx_exp(n)
 {
-   z=""
-   for(i=x;i<y;i++)
-      z=z c0
-   return z
-}
-# ------------------------------------------------------------------------------
-# double spaced dot & right justify
-function fx_dot2(x,y)
-{
-   z=""
-   for(i=x;i<y;i++)
-      if(i%2)                          # double space the dot
-         if(y%2)                       # justify
-            z=z" "
-         else
-            z=z c0
-      else
-         if(y%2)
-            z=z c0
-         else
-            z=z" "
-   return z
-}
-# ------------------------------------------------------------------------------
-# bytes -> percent
-function fx_p(x,y)
-{
-   l=length(x)
-   xn=fx_e(substr(x,1,l-1),substr(x,l))
-
-   l=length(y)
-   yn=fx_e(substr(y,1,l-1),substr(y,l))
-
-   return yn/xn
-}
-# ------------------------------------------------------------------------------
-# z*10^n exponent -> bytes
-function fx_e(z,ze)
-{
-   switch(ze)
+   if(n)                                     # log doesn't like zero
    {
-      case "P" :              # petabyte not there yet...
-         zq=1000000000000000
-         break
-      case "T" :              # terrabyte
-         zq=1000000000000
-         break
-      case "G" :              # gigabyte
-         zq=1000000000
-         break
-      case "M" :              # megabyte
-         zq=1000000
-         break
-      case "K" :              # kilobyte
-         zq=1000
-         break
-      default :               # byte
-         zq=1
+      e=int(int(log(n)/log(10))/3)*3
+      n=n/10^e
    }
-   return zq*z
+   else
+      e=0
+   s=sprintf("%4.1f",n)
+   switch(e)
+   {
+      case "0" :
+         s=s" "
+         break
+      case "3" :
+         s=s"K"
+         break
+      case "6" :
+         s=s"M"
+         break
+      case "9" :
+         s=s"G"
+         break
+      case "12" :
+         s=s"T"
+   }
+   printf(" %6s",s)
 }
 # ==============================================================================
